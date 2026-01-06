@@ -1,0 +1,29 @@
+# Compiled units
+*.dcu
+*.dcp
+*.dcpil
+*.drc
+*.dres
+*.dex
+
+# Executables
+*.exe
+*.dll
+*.bpl
+*.so
+*.dylib
+
+# Delphi IDE files
+*.local
+*.identcache
+__history/
+__recovery/
+
+# Backup files
+*.~*
+
+# Build output
+Win32/
+Win64/
+OSX64/
+Linux64/
