@@ -76,7 +76,7 @@ end;
 
 ## Downloading a File
 
-`DownloadFile` internally calls `GetDownloadInfo` to obtain the pre-signed URL, downloads the bytes, and verifies the SHA256 checksum by default.
+`DownloadFile` internally calls `GetDownloadInfo` to obtain the pre-signed URL, downloads the bytes, and verifies the SHA256 checksum by default. The file is written to a temporary `<OutputPath>.<random>.part` file in the same directory and renamed into place only on success, so a failed download or checksum mismatch never leaves a partial file at `OutputPath` (an existing file there is kept until the new one is complete).
 
 ```pascal
 var

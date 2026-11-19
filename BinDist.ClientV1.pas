@@ -258,18 +258,32 @@ end;
 procedure TBinDistClientV1.DoDownload(const Url: string; Stream: TStream);
 var
   Response: IHTTPResponse;
+  Buffer: TMemoryStream;
 begin
+  // Buffer the body so an error response (e.g. S3 XML for an expired
+  // pre-signed URL) is never written into the caller's stream.
+  Buffer := TMemoryStream.Create;
   try
-    // No auth header — downloading from pre-signed S3 URL
-    Response := FHttpClient.Get(Url, Stream);
-  except
-    on E: Exception do
-      raise EBinDistTransportError.Create(E.Message);
-  end;
+    try
+      // No auth header — downloading from pre-signed S3 URL
+      Response := FHttpClient.Get(Url, Buffer);
+    except
+      on E: Exception do
+        raise EBinDistTransportError.Create(E.Message);
+    end;
 
-  if Response.StatusCode <> 200 then
-    raise EBinDistTransportError.CreateFmt('download failed with status %d',
-      [Response.StatusCode]);
+    if Response.StatusCode <> 200 then
+      raise EBinDistTransportError.CreateFmt('download failed with status %d',
+        [Response.StatusCode]);
+
+    if Buffer.Size > 0 then
+    begin
+      Buffer.Position := 0;
+      Stream.CopyFrom(Buffer, Buffer.Size);
+    end;
+  finally
+    Buffer.Free;
+  end;
 end;
 
 // ---------------------------------------------------------------------------
@@ -475,10 +489,10 @@ begin
     Params[High(Params)] := TPair<string, string>.Create('page', IntToStr(Options.Page));
   end;
 
-  if Options.PageSize > 0 then
+  if Options.Limit > 0 then
   begin
     SetLength(Params, Length(Params) + 1);
-    Params[High(Params)] := TPair<string, string>.Create('pageSize', IntToStr(Options.PageSize));
+    Params[High(Params)] := TPair<string, string>.Create('limit', IntToStr(Options.Limit));
   end;
 
   if Options.Search <> '' then
@@ -513,8 +527,7 @@ begin
 
     Meta := ExtractMeta(TJSONObject(Json));
     Result.RequestId := Meta.RequestId;
-    if Meta.HasPagination then
-      Result.Pagination := Meta.Pagination;
+    Result.Pagination := Meta.Pagination;
   finally
     Json.Free;
   end;
@@ -583,8 +596,7 @@ begin
 
     Meta := ExtractMeta(TJSONObject(Json));
     Result.RequestId := Meta.RequestId;
-    if Meta.HasPagination then
-      Result.Pagination := Meta.Pagination;
+    Result.Pagination := Meta.Pagination;
   finally
     Json.Free;
   end;
@@ -620,8 +632,7 @@ begin
 
     Meta := ExtractMeta(TJSONObject(Json));
     Result.RequestId := Meta.RequestId;
-    if Meta.HasPagination then
-      Result.Pagination := Meta.Pagination;
+    Result.Pagination := Meta.Pagination;
   finally
     Json.Free;
   end;
@@ -734,18 +745,50 @@ procedure TBinDistClientV1.DownloadFile(const ApplicationId, Version,
   VerifyChecksum: Boolean; const FileId: string);
 var
   FileStream: TFileStream;
-  Dir: string;
+  Dir, TempPath, BackupPath: string;
+  Guid: TGUID;
 begin
   Dir := ExtractFilePath(OutputPath);
   if (Dir <> '') and not DirectoryExists(Dir) then
     ForceDirectories(Dir);
 
-  FileStream := TFileStream.Create(OutputPath, fmCreate);
+  // Download into a temp file next to OutputPath and rename it into place
+  // only after the download (and checksum) succeeded, so a failure never
+  // leaves an empty or truncated file at OutputPath.
+  CreateGUID(Guid);
+  TempPath := OutputPath + '.' + Copy(GUIDToString(Guid), 2, 8) + '.part';
+
   try
-    InternalDownloadToStream(ApplicationId, Version, FileStream, Options,
-      VerifyChecksum, FileId);
-  finally
-    FileStream.Free;
+    FileStream := TFileStream.Create(TempPath, fmCreate);
+    try
+      InternalDownloadToStream(ApplicationId, Version, FileStream, Options,
+        VerifyChecksum, FileId);
+    finally
+      FileStream.Free;
+    end;
+
+    // RenameFile does not overwrite on every platform, so move the old file
+    // aside first and put it back if the new one cannot be moved into place.
+    BackupPath := '';
+    if FileExists(OutputPath) then
+    begin
+      BackupPath := OutputPath + '.' + Copy(GUIDToString(Guid), 2, 8) + '.old';
+      if not RenameFile(OutputPath, BackupPath) then
+        raise EBinDistError.CreateFmt('cannot replace existing file %s',
+          [OutputPath]);
+    end;
+    if not RenameFile(TempPath, OutputPath) then
+    begin
+      if BackupPath <> '' then
+        RenameFile(BackupPath, OutputPath);
+      raise EBinDistError.CreateFmt('cannot move downloaded file to %s',
+        [OutputPath]);
+    end;
+    if BackupPath <> '' then
+      DeleteFile(BackupPath);
+  except
+    DeleteFile(TempPath);
+    raise;
   end;
 end;
 
