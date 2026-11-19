@@ -66,9 +66,9 @@ type
     procedure DeleteApplication(const ApplicationId: string);
 
     function ListActivity(const ActivityType, ApplicationId: string;
-      Page, PageSize: Integer): TPaginatedResult<TArray<TActivityEntry>>;
+      Page, Limit: Integer): TPaginatedResult<TArray<TActivityEntry>>;
 
-    function ListCustomers(Page, PageSize: Integer):
+    function ListCustomers(Page, Limit: Integer):
       TPaginatedResult<TArray<TCustomerInfo>>;
 
     function GetStats(const ApplicationId: string): TStats;
@@ -502,14 +502,20 @@ var
   Payload: TJSONObject;
   Json: TJSONValue;
   DataObj: TJSONObject;
+  Base64: TBase64Encoding;
 begin
   Payload := TJSONObject.Create;
   try
     Payload.AddPair('applicationId', ApplicationId);
     Payload.AddPair('version', Version);
     Payload.AddPair('fileName', FileName);
-    Payload.AddPair('fileContent',
-      TNetEncoding.Base64.EncodeBytesToString(Content));
+    // CharsPerLine = 0: no CRLF every 76 chars (TNetEncoding.Base64 inserts them)
+    Base64 := TBase64Encoding.Create(0);
+    try
+      Payload.AddPair('fileContent', Base64.EncodeBytesToString(Content));
+    finally
+      Base64.Free;
+    end;
     Payload.AddPair('fileType', 'MAIN');
     if ReleaseNotes <> '' then
       Payload.AddPair('releaseNotes', ReleaseNotes);
@@ -710,7 +716,7 @@ begin
 end;
 
 function TBinDistAdminV1.ListActivity(const ActivityType,
-  ApplicationId: string; Page, PageSize: Integer):
+  ApplicationId: string; Page, Limit: Integer):
   TPaginatedResult<TArray<TActivityEntry>>;
 var
   Params: TArray<TPair<string, string>>;
@@ -738,10 +744,10 @@ begin
     SetLength(Params, Length(Params) + 1);
     Params[High(Params)] := TPair<string, string>.Create('page', IntToStr(Page));
   end;
-  if PageSize > 0 then
+  if Limit > 0 then
   begin
     SetLength(Params, Length(Params) + 1);
-    Params[High(Params)] := TPair<string, string>.Create('pageSize', IntToStr(PageSize));
+    Params[High(Params)] := TPair<string, string>.Create('limit', IntToStr(Limit));
   end;
 
   // Build query string
@@ -771,14 +777,13 @@ begin
 
     Meta := ExtractMeta(TJSONObject(Json));
     Result.RequestId := Meta.RequestId;
-    if Meta.HasPagination then
-      Result.Pagination := Meta.Pagination;
+    Result.Pagination := Meta.Pagination;
   finally
     Json.Free;
   end;
 end;
 
-function TBinDistAdminV1.ListCustomers(Page, PageSize: Integer):
+function TBinDistAdminV1.ListCustomers(Page, Limit: Integer):
   TPaginatedResult<TArray<TCustomerInfo>>;
 var
   Params: TArray<TPair<string, string>>;
@@ -795,10 +800,10 @@ begin
     SetLength(Params, Length(Params) + 1);
     Params[High(Params)] := TPair<string, string>.Create('page', IntToStr(Page));
   end;
-  if PageSize > 0 then
+  if Limit > 0 then
   begin
     SetLength(Params, Length(Params) + 1);
-    Params[High(Params)] := TPair<string, string>.Create('pageSize', IntToStr(PageSize));
+    Params[High(Params)] := TPair<string, string>.Create('limit', IntToStr(Limit));
   end;
 
   Query := '';
@@ -827,8 +832,7 @@ begin
 
     Meta := ExtractMeta(TJSONObject(Json));
     Result.RequestId := Meta.RequestId;
-    if Meta.HasPagination then
-      Result.Pagination := Meta.Pagination;
+    Result.Pagination := Meta.Pagination;
   finally
     Json.Free;
   end;

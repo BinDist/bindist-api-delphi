@@ -81,7 +81,7 @@ type
 
   TListApplicationsOptions = record
     Page: Integer;
-    PageSize: Integer;
+    Limit: Integer;
     Search: string;
     Tags: TArray<string>;
   end;
@@ -226,9 +226,9 @@ type
     procedure DeleteApplication(const ApplicationId: string);
 
     function ListActivity(const ActivityType, ApplicationId: string;
-      Page, PageSize: Integer): TPaginatedResult<TArray<TActivityEntry>>;
+      Page, Limit: Integer): TPaginatedResult<TArray<TActivityEntry>>;
 
-    function ListCustomers(Page, PageSize: Integer):
+    function ListCustomers(Page, Limit: Integer):
       TPaginatedResult<TArray<TCustomerInfo>>;
 
     function GetStats(const ApplicationId: string): TStats;
