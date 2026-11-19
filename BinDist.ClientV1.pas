@@ -745,7 +745,7 @@ procedure TBinDistClientV1.DownloadFile(const ApplicationId, Version,
   VerifyChecksum: Boolean; const FileId: string);
 var
   FileStream: TFileStream;
-  Dir, TempPath: string;
+  Dir, TempPath, BackupPath: string;
   Guid: TGUID;
 begin
   Dir := ExtractFilePath(OutputPath);
@@ -767,13 +767,25 @@ begin
       FileStream.Free;
     end;
 
-    // RenameFile does not overwrite on Windows, so remove the old file first
-    if FileExists(OutputPath) and not DeleteFile(OutputPath) then
-      raise EBinDistError.CreateFmt('cannot replace existing file %s',
-        [OutputPath]);
+    // RenameFile does not overwrite on every platform, so move the old file
+    // aside first and put it back if the new one cannot be moved into place.
+    BackupPath := '';
+    if FileExists(OutputPath) then
+    begin
+      BackupPath := OutputPath + '.' + Copy(GUIDToString(Guid), 2, 8) + '.old';
+      if not RenameFile(OutputPath, BackupPath) then
+        raise EBinDistError.CreateFmt('cannot replace existing file %s',
+          [OutputPath]);
+    end;
     if not RenameFile(TempPath, OutputPath) then
+    begin
+      if BackupPath <> '' then
+        RenameFile(BackupPath, OutputPath);
       raise EBinDistError.CreateFmt('cannot move downloaded file to %s',
         [OutputPath]);
+    end;
+    if BackupPath <> '' then
+      DeleteFile(BackupPath);
   except
     DeleteFile(TempPath);
     raise;
